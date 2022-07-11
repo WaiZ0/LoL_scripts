@@ -14,6 +14,37 @@ http://www.mingweisamuel.com/lcu-schema/tool/#/Plugin%20lol-loot
 """
 
 
+def query_yes_no(question, default="yes"):
+    """Ask a yes/no question via raw_input() and return their answer.
+
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+            It must be "yes" (the default), "no" or None (meaning
+            an answer is required of the user).
+
+    The "answer" return value is True for "yes" or False for "no".
+    """
+    valid = {"yes": True, "y": True, "ye": True, "no": False, "n": False}
+    if default is None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while True:
+        sys.stdout.write(question + prompt)
+        choice = input().lower()
+        if default is not None and choice == "":
+            return valid[default]
+        elif choice in valid:
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' " "(or 'y' or 'n').\n")
+
+
 def get_lockfile(lolPath):
     """
     :param riotBaseFolder: path of riot Folder, may changes
@@ -102,13 +133,13 @@ def parseLoot(jsonObject) -> dict:
             champDict[loot["lootName"]] = loot["count"]
 
     print(f"[*] {cpt} are champions shards")
-    print(f"[*] You will won {totalBlueEssences} blue essences duh")
+    print(f"[*] You would won {totalBlueEssences} blue essences duh")
 
     if cpt == 0:
         print("[-] No champ shard to delete bro, I'm leaving")
         sys.exit(0)
 
-    return champDict
+    return champDict, totalBlueEssences
 
 
 def disenchant(httpClient, champDict, host, port, protocol):
@@ -141,7 +172,19 @@ def run(riotBaseFolder):
     httpClient = initHttpSession(password)
 
     # Get list of champ to sell & sell it
-    champDict = parseLoot(getLoot(httpClient, host, port, protocol))
+    champDict, totalBlueEssences = parseLoot(getLoot(httpClient, host, port, protocol))
+
+    # User confirmation
+    validation = query_yes_no(
+        "[?] Do you confirm the disenchants of all not owned champ shards ?",
+        default="no",
+    )
+
+    if not validation:
+        print("[X] You choose not to disenchant, bye")
+        sys.exit(0)
+
+    # Disenchant shards
     disenchant(httpClient, champDict, host, port, protocol)
 
 
