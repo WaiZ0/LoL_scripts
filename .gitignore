@@ -1,2 +1,7 @@
 venv/
-.idea
+.idea/
+lol-loot_v1_player-loot.txt
+#dist/
+disenchantChampShards.spec
+build/
+loot_file.json

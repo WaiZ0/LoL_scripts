@@ -2,7 +2,11 @@ import sys
 import requests
 import json
 import urllib3
+import argparse
+from pathlib import Path, WindowsPath
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 """
 Doc
@@ -10,25 +14,40 @@ http://www.mingweisamuel.com/lcu-schema/tool/#/Plugin%20lol-loot
 """
 
 
-def get_lockfile(riotBaseFolder):
+def get_lockfile(lolPath):
     """
     :param riotBaseFolder: path of riot Folder, may changes
 
     Get the lockfile info to connect via https.
 
-    File folder
-        D:\Riot Games\League of Legends\lockfile
+    Lockfile path example
+        Ex: C:\Riot Games\League of Legends\lockfile
 
     File content struct:
         ProcessName:ProcessId:Port:Password:Protocol
     """
-    lockfile_path = riotBaseFolder + '\\League of Legends\\lockfile'
 
-    with open(lockfile_path, 'r') as f:
-        processName, processId, port, password, protocol = f.read().split(':')
-        #print(f'{processName}\n{processId}\n{port}\n{password}\n{protocol}\n')
+    if lolPath == Path("."):
+        # if lockfile is in same dir as script
+        lockfilePath = Path.cwd() / "lockfile"
+
+    else:
+        # else path is specified from arg
+        lockfilePath = lolPath / "lockfile"
+
+    if not lockfilePath.exists():
+        print(
+            f"[!] lockfile does not exist in this path: {lockfilePath}; please provide a valid path to League of Legend folder"
+        )
+        sys.exit(1)
+
+    print(f"[*] lockfile file found in {lockfilePath}")
+    with open(lockfilePath, "r") as f:
+        processName, processId, port, password, protocol = f.read().split(":")
+        # print(f'{processName}\n{processId}\n{port}\n{password}\n{protocol}\n')
 
     return port, password, protocol
+
 
 def initHttpSession(password):
     """
@@ -36,9 +55,10 @@ def initHttpSession(password):
     :return: http session to use
     """
     s = requests.Session()
-    s.auth = requests.auth.HTTPBasicAuth('riot', password)
+    s.auth = requests.auth.HTTPBasicAuth("riot", password)
     s.verify = False
     return s
+
 
 def getLoot(httpClient, host, port, protocol):
     """
@@ -48,43 +68,48 @@ def getLoot(httpClient, host, port, protocol):
     :param protocol:
     :return: jsonObject of lol client response
     """
-    ressource_playerloot = '/lol-loot/v1/player-loot'
-    url = f'{protocol}://{host}:{port}{ressource_playerloot}'
+    ressource_playerloot = "/lol-loot/v1/player-loot"
+    url = f"{protocol}://{host}:{port}{ressource_playerloot}"
     r = httpClient.get(url)
     return json.loads(r.text)
 
 
-def parseLoot(jsonObject):
+def parseLoot(jsonObject) -> dict:
     """
     :param jsonObject: contain all loot as json obj, dict composed of dict of loot
     :return: dict of owned champ available to disenchant and the nb of stack
 
     Create a dict of champ chard to sell by returning a uniq ID and the nb of stack of this champ
     """
-    print(f'[*] {len(jsonObject)} loot found')
+    print(f"[*] {len(jsonObject)} loot found")
 
     champDict = {}
     cpt = 0
+    totalBlueEssences = 0
 
     # for each loot in the account
     for loot in jsonObject:
 
         # if loot is champ && champ is owned
-        if loot['disenchantLootName'] == 'CURRENCY_champion' and loot['itemStatus'] == 'OWNED':
+        if (
+            loot["disenchantLootName"] == "CURRENCY_champion"
+            and loot["itemStatus"] == "OWNED"
+        ):
             cpt += 1
+            totalBlueEssences += loot["value"]
 
             # Add to dict of: uniq ID + nb of occurrences (stacked champ shards)
-            champDict[loot['lootName']] = loot['count']
+            champDict[loot["lootName"]] = loot["count"]
 
-    print(f'[*] {cpt} are champions shards')
+    print(f"[*] {cpt} are champions shards")
+    print(f"[*] You will won {totalBlueEssences} blue essences duh")
 
     if cpt == 0:
-        print('[-] No champ shard to delete bro, I\'m leaving')
+        print("[-] No champ shard to delete bro, I'm leaving")
         sys.exit(0)
 
-
-
     return champDict
+
 
 def disenchant(httpClient, champDict, host, port, protocol):
     """
@@ -95,19 +120,19 @@ def disenchant(httpClient, champDict, host, port, protocol):
     :param protocol:
     :return:
     """
-    print('[+] Deleting all owned champions shards ...')
+    print("[+] Disenchanting all owned champions shards ...")
     for lootName, count in champDict.items():
-        resource_disenchant = '/lol-loot/v1/recipes/CHAMPION_RENTAL_disenchant/craft?repeat='
-        url = f'{protocol}://{host}:{port}{resource_disenchant}{count}'
-        body = f'[\"{lootName}\"]'
+        resource_disenchant = (
+            "/lol-loot/v1/recipes/CHAMPION_RENTAL_disenchant/craft?repeat="
+        )
+        url = f"{protocol}://{host}:{port}{resource_disenchant}{count}"
+        body = f'["{lootName}"]'
         r = httpClient.post(url, data=body)
-    print('[+] Done !')
+    print("[+] Done !")
 
 
-if __name__ == '__main__':
-    # Parameters
-    riotBaseFolder = 'E:\\Jeux\\Riot Games'
-    host = '127.0.0.1'
+def run(riotBaseFolder):
+    host = "127.0.0.1"
 
     # Get context info
     port, password, protocol = get_lockfile(riotBaseFolder)
@@ -120,4 +145,32 @@ if __name__ == '__main__':
     disenchant(httpClient, champDict, host, port, protocol)
 
 
+if __name__ == "__main__":
+    # Handling args
+    parser = argparse.ArgumentParser(description="Scripts parameters")
+    parser.add_argument(
+        "-p",
+        "--path",
+        action="store",
+        default=".\\",
+        type=Path,
+        help='Path of "League of Legend" Folder without "\\" at the end, default is current folder.\n Ex: disenchantChampShards.py --path C:\Riot Games\League of Legends',
+    )
 
+    args = parser.parse_args()
+
+    lolPath = Path(args.path)
+    if lolPath == Path("."):
+        print("[*] No path specified, defaulting to current folder")
+    else:
+        print(f"[*] League of Legend folder path: {lolPath} ")
+
+    # Check if valid directory
+    if not lolPath.is_dir():
+        print(
+            f"[!] Path is not valid, check the League of Legend folder path, also note that valid path does not contain '\\' at the end"
+        )
+        sys.exit(1)
+
+    # run core
+    run(lolPath)
