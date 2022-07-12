@@ -7,7 +7,6 @@ from pathlib import Path, WindowsPath
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
 """
 Doc
 http://www.mingweisamuel.com/lcu-schema/tool/#/Plugin%20lol-loot
@@ -176,7 +175,7 @@ def run(riotBaseFolder):
 
     # User confirmation
     validation = query_yes_no(
-        "[?] Do you confirm the disenchants of all not owned champ shards ?",
+        "[?] Do you confirm the disenchants of all owned champ shards ?",
         default="no",
     )
 
@@ -197,7 +196,8 @@ if __name__ == "__main__":
         action="store",
         default=".\\",
         type=Path,
-        help='Path of "League of Legend" Folder without "\\" at the end, default is current folder.\n Ex: disenchantChampShards.py --path C:\Riot Games\League of Legends',
+        help='Path of "League of Legend" Folder without "\\" at the end, default is current folder.\n Ex: '
+        "disenchantChampShards.py --path C:\Riot Games\League of Legends",
     )
 
     args = parser.parse_args()
@@ -211,7 +211,8 @@ if __name__ == "__main__":
     # Check if valid directory
     if not lolPath.is_dir():
         print(
-            f"[!] Path is not valid, check the League of Legend folder path, also note that valid path does not contain '\\' at the end"
+            f"[!] Path is not valid, check the League of Legend folder path, also note that valid path does not "
+            f"contain '\\' at the end "
         )
         sys.exit(1)
 
