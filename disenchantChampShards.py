@@ -101,6 +101,7 @@ def getLoot(httpClient, host, port, protocol):
     ressource_playerloot = "/lol-loot/v1/player-loot"
     url = f"{protocol}://{host}:{port}{ressource_playerloot}"
     r = httpClient.get(url)
+    print(json.loads(r.text))
     return json.loads(r.text)
 
 
@@ -126,7 +127,7 @@ def parseLoot(jsonObject) -> dict:
             and loot["itemStatus"] == "OWNED"
         ):
             cpt += 1
-            totalBlueEssences += loot["value"]
+            totalBlueEssences += loot["disenchantValue"]
 
             # Add to dict of: uniq ID + nb of occurrences (stacked champ shards)
             champDict[loot["lootName"]] = loot["count"]
