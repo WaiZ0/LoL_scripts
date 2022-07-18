@@ -101,7 +101,7 @@ def getLoot(httpClient, host, port, protocol):
     ressource_playerloot = "/lol-loot/v1/player-loot"
     url = f"{protocol}://{host}:{port}{ressource_playerloot}"
     r = httpClient.get(url)
-    print(json.loads(r.text))
+    # print(json.loads(r.text))
     return json.loads(r.text)
 
 
