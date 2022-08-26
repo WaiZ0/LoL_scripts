@@ -105,7 +105,7 @@ def getLoot(httpClient, host, port, protocol):
     return json.loads(r.text)
 
 
-def parseLoot(jsonObject) -> dict:
+def genFinalListToSell(jsonObject):
     """
     :param jsonObject: contain all loot as json obj, dict composed of dict of loot
     :return: dict of owned champ available to disenchant and the nb of stack
@@ -121,7 +121,7 @@ def parseLoot(jsonObject) -> dict:
     # for each loot in the account
     for loot in jsonObject:
 
-        # if loot is champ && champ is owned
+        # if loot is champ && champ is owned => adding to list
         if (
             loot["disenchantLootName"] == "CURRENCY_champion"
             and loot["itemStatus"] == "OWNED"
@@ -129,7 +129,7 @@ def parseLoot(jsonObject) -> dict:
             cpt += 1
             totalBlueEssences += loot["disenchantValue"]
 
-            # Add to dict of: uniq ID + nb of occurrences (stacked champ shards)
+            # Add to dict => champDict[<uniqId>] = <nbOfStackedShards>
             champDict[loot["lootName"]] = loot["count"]
 
     print(f"[*] {cpt} are champions shards")
@@ -162,7 +162,37 @@ def disenchant(httpClient, champDict, host, port, protocol):
     print("[+] Done !")
 
 
-def run(riotBaseFolder):
+def onlyChamp(jsonList):
+    new_listOfDict = []
+
+    # For each loot in jsonObj
+    for loot in jsonList:
+
+        # If it is a champ shard
+        if loot["disenchantLootName"] == "CURRENCY_champion":
+            new_listOfDict.append(loot)
+
+    return new_listOfDict
+
+
+def champExclude(jsonList, excludeList):
+    new_listOfDict = []
+
+    # For each loot in jsonObj
+    for loot in jsonList:
+
+        # If it is a champ shard
+        if loot["disenchantLootName"] == "CURRENCY_champion":
+
+            # And if the itemDesc value is not in excludeList then append to new list
+            if loot["itemDesc"].lower() not in excludeList:
+
+                # then Add to new list
+                new_listOfDict.append(loot)
+
+    return new_listOfDict
+
+def run(riotBaseFolder, excludeList=None):
     host = "127.0.0.1"
 
     # Get context info
@@ -171,10 +201,19 @@ def run(riotBaseFolder):
     # Setup auth
     httpClient = initHttpSession(password)
 
-    # Get list of champ to sell & sell it
-    champDict, totalBlueEssences = parseLoot(getLoot(httpClient, host, port, protocol))
+    # Get champ only list jsonObj from the loot jsonObj
+    jsonList = onlyChamp(getLoot(httpClient, host, port, protocol))
+
+    # Exclude champ from jsonObj
+    jsonList = champExclude(jsonList, excludeList)
+
+    # Generate the final list to disenchant
+    champDict, totalBlueEssences = genFinalListToSell(jsonList)
 
     # User confirmation
+    if excludeList:
+        print(f'[*] Excluded champ: {", ".join([x for x in excludeList])}')
+
     validation = query_yes_no(
         "[?] Do you confirm the disenchants of all owned champ shards ?",
         default="no",
@@ -200,6 +239,14 @@ if __name__ == "__main__":
         help='Path of "League of Legend" Folder without "\\" at the end, default is current folder.\n Ex: '
         "disenchantChampShards.py --path C:\Riot Games\League of Legends",
     )
+    parser.add_argument(
+        "-e",
+        "--exclude",
+        action="store",
+        default=[],
+        nargs='*',
+        help='Coma separated list of Champ to exclude(case insensitive), like: --exclude vayne, jinx, trundle,sion,MoRgAnA',
+    )
 
     args = parser.parse_args()
 
@@ -208,6 +255,13 @@ if __name__ == "__main__":
         print("[*] No path specified, defaulting to current folder")
     else:
         print(f"[*] League of Legend folder path: {lolPath} ")
+
+    # handling exclude list if it is not empty
+    if args.exclude:
+        # deleting space, duplicate, and line return, spliting arg from coma
+        excludeList = [champ.lower() for champ in args.exclude]
+    else:
+        excludeList = []
 
     # Check if valid directory
     if not lolPath.is_dir():
@@ -218,4 +272,4 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # run core
-    run(lolPath)
+    run(lolPath, excludeList)
