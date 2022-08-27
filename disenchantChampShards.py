@@ -205,7 +205,8 @@ def run(riotBaseFolder, excludeList=None):
     jsonList = onlyChamp(getLoot(httpClient, host, port, protocol))
 
     # Exclude champ from jsonObj
-    jsonList = champExclude(jsonList, excludeList)
+    if excludeList:
+        jsonList = champExclude(jsonList, excludeList)
 
     # Generate the final list to disenchant
     champDict, totalBlueEssences = genFinalListToSell(jsonList)
