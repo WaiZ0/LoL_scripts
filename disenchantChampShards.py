@@ -116,14 +116,15 @@ def getStats(jsonObject):
 
     lootShardsLen = 0
     totalBlueEssences = 0
+    deletedChamp = []
 
     # for each loot in the account
     for loot in jsonObject:
         totalBlueEssences += loot["disenchantValue"]
         lootShardsLen += 1
+        deletedChamp.append(loot["itemDesc"])
 
-    return totalBlueEssences, lootShardsLen
-
+    return totalBlueEssences, lootShardsLen, deletedChamp
 
 
 def genFinalListToSell(jsonObject):
@@ -138,7 +139,6 @@ def genFinalListToSell(jsonObject):
 
     # for each loot in the account
     for loot in jsonObject:
-
         # Add to dict => champDict[<uniqId>] = <nbOfStackedShards>
         champDict[loot["lootName"]] = loot["count"]
 
@@ -154,20 +154,16 @@ def disenchant(httpClient, champDict, host, port, protocol):
     :param protocol:
     :return:
     """
-    proxies = {
-        'http': 'http://127.0.0.1:8080',
-        'https': 'http://127.0.0.1:8080',
-    }
 
     noError = 0
-    print("[+] Disenchanting all owned champions shards ...")
+    print("[+] Disenchanting ...")
     for lootName, count in champDict.items():
         resource_disenchant = (
             "/lol-loot/v1/recipes/CHAMPION_RENTAL_disenchant/craft?repeat="
         )
         url = f"{protocol}://{host}:{port}{resource_disenchant}{count}"
         body = f'["{lootName}"]'
-        r = httpClient.post(url, data=body, proxies=proxies)
+        r = httpClient.post(url, data=body)
 
         if r.status_code == 500:
             noError = 1
@@ -177,6 +173,7 @@ def disenchant(httpClient, champDict, host, port, protocol):
 
     print("[+] Done !")
 
+
 def onlyOwned(jsonList):
     new_listOfDict = []
 
@@ -184,10 +181,11 @@ def onlyOwned(jsonList):
     for loot in jsonList:
 
         # if owned then keep in list to disenchant, else filtered out
-        if (loot["itemStatus"] == "OWNED"):
+        if loot["itemStatus"] == "OWNED":
             new_listOfDict.append(loot)
 
     return new_listOfDict
+
 
 def onlyChamp(jsonList):
     new_listOfDict = []
@@ -210,14 +208,13 @@ def champExclude(jsonList, excludeList):
     for loot in jsonList:
 
         # if the itemDesc value is not in excludeList then append to new list
-
         if loot["itemDesc"].lower() not in excludeList:
 
             # then Add to new list
             new_listOfDict.append(loot)
 
         else:
-            #print(f'XX Exluding {loot["itemDesc"]}')
+            # print(f'XX Exluding {loot["itemDesc"]}')
             pass
 
     return new_listOfDict
@@ -249,49 +246,43 @@ def run(riotBaseFolder, excludeList=None):
     jsonList = getLoot(httpClient, host, port, protocol)
     print(f"[*] {len(jsonList)} loot found")
 
-
-
     # Only keep champ shard from the json obj
     jsonList = onlyChamp(jsonList)
 
     # Only keep owned champ shard
     jsonList = onlyOwned(jsonList)
 
-
     # Exclude user specified champ from jsonObj if needed
     if excludeList:
-
         # clean the exclude list of user's error
         excludeList = clearExcludeList(jsonList, excludeList)
 
         # generate new json loot obj
         jsonList = champExclude(jsonList, excludeList)
 
-
         print(
             f'[-] Shard that wont be deleted (and that you get a shard of): {", ".join([x for x in excludeList])}'
         )
 
-    #print(f'{", ".join([loot["itemDesc"] for loot in jsonList])}')
+    # print(f'{", ".join([loot["itemDesc"] for loot in jsonList])}')
 
     # Get stat from the json Obj after filter
-    totalBlueEssences, lootShardsLen = getStats(jsonList)
+    totalBlueEssences, lootShardsLen, deletedChamp = getStats(jsonList)
     if totalBlueEssences == 0:
         print("[-] No champ shard to delete bro, I'm leaving")
         sys.exit(0)
 
-
     print(f"[*] {len(jsonList)} are owned")
     print(f"[*] {lootShardsLen} are champions shards")
     print(f"[*] You would won {totalBlueEssences} blue essences duh")
-
+    print(f"[*] Deleted shards would be: {', '.join(deletedChamp)}")
 
     # Generate the final list to disenchant
     champDict = genFinalListToSell(jsonList)
 
     # User validation
     validation = query_yes_no(
-        "[?] Do you confirm the disenchantment of owned champ shards ?",
+        "[?] Do you confirm the disenchantment of these champ shards ?",
         default="no",
     )
 
@@ -319,8 +310,8 @@ if __name__ == "__main__":
         "-e",
         "--exclude",
         action="store",
-        default=[],
-        nargs="*",
+        default="",
+        type=str,
         help="Coma separated list of Champ to exclude(case insensitive), like: --exclude vayne, jinx, trundle,sion,MoRgAnA",
     )
 
@@ -334,8 +325,11 @@ if __name__ == "__main__":
 
     # handling exclude list if it is not empty
     if args.exclude:
+
         # deleting space, duplicate, and line return, spliting arg from coma
-        excludeList = [champ.lower() for champ in args.exclude]
+        excludeList = [champ.strip().lower() for champ in args.exclude.split(",")]
+        # print(excludeList)
+
     else:
         excludeList = []
 
