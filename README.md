@@ -6,22 +6,21 @@ Composed of 1 python script (disenchantChampShards.py) or the executable version
 It can be used as it is after downloading it specifying the Lol folder path, 
 or you can move it in your League of Legends game folder to avoid providing the path argument.
 
-## Usage - from powershell
-**Note:** Do not put a "\\" at the end of the path like below:
-
+## Usage
+### Powershell
 ```powershell
-PS .\disenchantChampShards.exe --path 'C:\Riot Games\League of Legends'
-
-# or with python
-PS python disenchantChampShards.py --path 'C:\Riot Games\League of Legends'
+.\dist\disenchantChampShards.exe
 ```
-
-If script directly copied into "Riot Games" folder, no path arg needed, examples below:
+### Python
 ```powershell
-PS cd 'C:\Riot Games\League of Legends'; .\disenchantChampShards.exe
+python disenchantChampShards.py
 
-# or with python
-PS cd 'C:\Riot Games\League of Legends'; python disenchantChampShards.py
+# If specific path
+python disenchantChampShards.py --path 'Y:\\Riot Games\\League of Legends'
+```
+## Python to exe
+```powershell
+pyinstaller.exe --onefile .\disenchantChampShards.py
 ```
 
 

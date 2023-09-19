@@ -47,18 +47,20 @@ def get_loot(http_session, host, port, protocol, debug=False):
 
 
 def get_stats(loot_list, debug=False):
-    total_blue_essences = sum(loot["disenchantValue"] for loot in loot_list)
+    #total_blue_essences = sum(loot["disenchantValue"] for loot in loot_list)
 
-    # champ shard only
-    champ_shards = []
+    total_blue_essences = 0
+    champ_shards_names = []
 
+    print("[*] Parsing loots ...")
     for loot in loot_list:
         if loot.get("disenchantLootName") == "CURRENCY_champion":
-            champ_shards.append(loot["itemDesc"])
+            champ_shards_names.append(loot["itemDesc"])
+            total_blue_essences += loot["value"]
             if debug:
-                print(champ_shards)
+                print(champ_shards_names, loot["value"])
 
-    return total_blue_essences, champ_shards
+    return total_blue_essences, champ_shards_names
 
 
 def disenchant(http_session, loots, host, port, protocol, debug=False):
