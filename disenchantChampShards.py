@@ -46,7 +46,7 @@ def get_loot(http_session, host, port, protocol, debug=False):
     return json.loads(response.text)
 
 
-def get_stats(loot_list):
+def get_stats(loot_list, debug=False):
     total_blue_essences = sum(loot["disenchantValue"] for loot in loot_list)
 
     # champ shard only
@@ -55,19 +55,25 @@ def get_stats(loot_list):
     for loot in loot_list:
         if loot.get("disenchantLootName") == "CURRENCY_champion":
             champ_shards.append(loot["itemDesc"])
-            print(champ_shards)
+            if debug:
+                print(champ_shards)
 
     return total_blue_essences, champ_shards
 
 
 def disenchant(http_session, loots, host, port, protocol, debug=False):
-    resource_disenchant = "/lol-loot/v1/recipes/CHAMPION_RENTAL_disenchant/craft?repeat="
     error = False
 
     for lootid, attributes in loots.items():
         if debug:
             print(f"lootid {lootid}, nb: {attributes['count']}")
-        url = f"{protocol}://{host}:{port}{resource_disenchant}{attributes['count']}"
+
+        if "CHAMPION_RENTAL_" in lootid:
+            uri = "/lol-loot/v1/recipes/CHAMPION_RENTAL_disenchant/craft?repeat="
+        else:
+            uri = "/lol-loot/v1/recipes/CHAMPION_disenchant/craft?repeat="
+
+        url = f"{protocol}://{host}:{port}{uri}{attributes['count']}"
         body = json.dumps([lootid])
         r = http_session.post(url, data=body)
 
