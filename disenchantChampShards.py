@@ -60,36 +60,50 @@ def get_stats(loot_list):
     return total_blue_essences, champ_shards
 
 
-def disenchant(http_session, loot_to_disenchant, host, port, protocol, debug=False):
+def disenchant(http_session, loots, host, port, protocol, debug=False):
     resource_disenchant = "/lol-loot/v1/recipes/CHAMPION_RENTAL_disenchant/craft?repeat="
-    no_error = False
+    error = False
 
-    for loot_name, count in loot_to_disenchant.items():
-        url = f"{protocol}://{host}:{port}{resource_disenchant}{count}"
-        body = json.dumps([loot_name])
-        response = http_session.post(url, data=body)
+    for lootid, attributes in loots.items():
+        if debug:
+            print(f"lootid {lootid}, nb: {attributes['count']}")
+        url = f"{protocol}://{host}:{port}{resource_disenchant}{attributes['count']}"
+        body = json.dumps([lootid])
+        r = http_session.post(url, data=body)
 
-        if response.status_code == 500:
-            no_error = True
+        if r.status_code == 500:
+            error = True
 
-        # if debug:
-        #     print(f"POST Request URL: {url}")
-        #     print(f"POST Request Body: {body}")
-        #     print(f"POST Response: {response.text}")
+        if debug:
+            print(f"POST Request URL: {url}")
+            print(f"POST Request Body: {body}")
+            print(f"POST Response: {r.text}")
 
-    if no_error:
+    if error:
         print("[!] Error while deleting some shards, some might still be here ...")
     else:
         print("[+] Done!")
 
 
-def run(lolPaths, exclude_list=None, debug=False):
+def get_champ_lootid(loots, debug=False):
+    champloots = {}
+    for loot in loots:
+        if loot["disenchantLootName"] == "CURRENCY_champion":
+            champloots[loot["lootId"]] = {"count": loot["count"]}
+            if debug:
+                print(champloots)
+    return champloots
+
+
+
+
+def run(lolpaths, exclude_list=None, debug=False):
     host = "127.0.0.1"
     port = None
     password = None
     protocol = None
 
-    for lolPath in lolPaths:
+    for lolPath in lolpaths:
         lolPath = Path(lolPath)
         if not lolPath.is_dir():
             if debug:
@@ -109,23 +123,24 @@ def run(lolPaths, exclude_list=None, debug=False):
         raise FileNotFoundError("Lockfile does not exist in any of the specified paths.")
 
     http_session = init_http_session(password)
-    loot_list = get_loot(http_session, host, port, protocol, debug)
+    loots = get_loot(http_session, host, port, protocol, debug) # loots is a json object
     if debug:
-        print(json.dumps(loot_list, indent=4))
+        print(json.dumps(loots, indent=4))
 
     # Filter loot based on your criteria here
 
-    total_blue_essences, champ_shards = get_stats(loot_list)
+    total_blue_essences, champ_shards = get_stats(loots)
     if total_blue_essences == 0:
         print("[-] No champ shard to delete bro, I'm leaving")
         return
 
-    print(f"[*] {len(loot_list)} loots are owned")
+    print(f"[*] {len(loots)} loots are owned")
     print(f"[*] {len(champ_shards)} loots are champions shards")
     print(f"[*] You would win {total_blue_essences} blue essences")
     print(f"[*] Deleted champ shards would be: {', '.join(champ_shards)}")
 
-    champ_to_disenchant = generate_final_list_to_sell(loot_list)
+    champ_to_disenchant = get_champ_lootid(loots)
+    print(champ_to_disenchant)
     validation = input("[?] Do you confirm the disenchantment of these champ shards? (yes/no): ").strip().lower()
 
     if validation == "yes":
