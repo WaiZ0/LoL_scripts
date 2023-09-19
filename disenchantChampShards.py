@@ -1,310 +1,149 @@
-import sys
+import argparse
 import requests
 import json
 import urllib3
-import argparse
-from pathlib import Path, WindowsPath
+from pathlib import Path
 
+# Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-"""
-Doc
-http://www.mingweisamuel.com/lcu-schema/tool/#/Plugin%20lol-loot
-"""
+
+def find_lockfile(lolPaths, debug=False):
+    for lolPath in lolPaths:
+        lockfile_path = lolPath / "lockfile"
+        if lockfile_path.exists():
+            if debug:
+                print(f"Found lockfile at: {lockfile_path}")
+            return lockfile_path
+    return None
 
 
-def query_yes_no(question, default="yes"):
-    """Ask a yes/no question via raw_input() and return their answer.
+def get_lockfile(lolPaths, debug=False):
+    lockfile_path = find_lockfile(lolPaths, debug)
+    if not lockfile_path:
+        raise FileNotFoundError("Lockfile does not exist in any of the specified paths.")
 
-    "question" is a string that is presented to the user.
-    "default" is the presumed answer if the user just hits <Enter>.
-            It must be "yes" (the default), "no" or None (meaning
-            an answer is required of the user).
-
-    The "answer" return value is True for "yes" or False for "no".
-    """
-    valid = {"yes": True, "y": True, "ye": True, "no": False, "n": False}
-    if default is None:
-        prompt = " [y/n] "
-    elif default == "yes":
-        prompt = " [Y/n] "
-    elif default == "no":
-        prompt = " [y/N] "
-    else:
-        raise ValueError("invalid default answer: '%s'" % default)
-
-    while True:
-        sys.stdout.write(question + prompt)
-        choice = input().lower()
-        if default is not None and choice == "":
-            return valid[default]
-        elif choice in valid:
-            return valid[choice]
-        else:
-            sys.stdout.write("Please respond with 'yes' or 'no' " "(or 'y' or 'n').\n")
-
-
-def get_lockfile(lolPath):
-    """
-    :param riotBaseFolder: path of riot Folder, may changes
-
-    Get the lockfile info to connect via https.
-
-    Lockfile path example
-        Ex: C:\Riot Games\League of Legends\lockfile
-
-    File content struct:
-        ProcessName:ProcessId:Port:Password:Protocol
-    """
-
-    if lolPath == Path("."):
-        # if lockfile is in same dir as script
-        lockfilePath = Path.cwd() / "lockfile"
-
-    else:
-        # else path is specified from arg
-        lockfilePath = lolPath / "lockfile"
-
-    if not lockfilePath.exists():
-        print(
-            f"[!] lockfile does not exist in this path: {lockfilePath}; please provide a valid path to League of Legend folder"
-        )
-        sys.exit(1)
-
-    print(f"[*] lockfile file found in {lockfilePath}")
-    with open(lockfilePath, "r") as f:
+    with open(lockfile_path, "r") as f:
         processName, processId, port, password, protocol = f.read().split(":")
-        # print(f'{processName}\n{processId}\n{port}\n{password}\n{protocol}\n')
 
     return port, password, protocol
 
 
-def initHttpSession(password):
-    """
-    :param password:
-    :return: http session to use
-    """
-    s = requests.Session()
-    s.auth = requests.auth.HTTPBasicAuth("riot", password)
-    s.verify = False
-    return s
+def init_http_session(password):
+    session = requests.Session()
+    session.auth = requests.auth.HTTPBasicAuth("riot", password)
+    session.verify = False
+    return session
 
 
-def getLoot(httpClient, host, port, protocol):
-    """
-    :param httpClient:
-    :param host:
-    :param port:
-    :param protocol:
-    :return: jsonObject of lol client response
-    """
-    ressource_playerloot = "/lol-loot/v1/player-loot"
-    url = f"{protocol}://{host}:{port}{ressource_playerloot}"
-    r = httpClient.get(url)
-    # print(json.loads(r.text))
-    return json.loads(r.text)
+def get_loot(http_session, host, port, protocol, debug=False):
+    resource_playerloot = "/lol-loot/v1/player-loot"
+    url = f"{protocol}://{host}:{port}{resource_playerloot}"
+    response = http_session.get(url)
+    # if debug:
+    #     print(f"GET Request URL: {url}")
+    #     print(f"GET Response: {response.text}")
+    return json.loads(response.text)
 
 
-def getStats(jsonObject):
-    """
-    :param jsonObject:
-    :return:
+def get_stats(loot_list):
+    total_blue_essences = sum(loot["disenchantValue"] for loot in loot_list)
 
-    Return stats from the final json loot obj.
-    """
-    lootsLen = len(jsonObject)
+    # champ shard only
+    champ_shards = []
 
-    lootShardsLen = 0
-    totalBlueEssences = 0
-    deletedChamp = []
+    for loot in loot_list:
+        if loot.get("disenchantLootName") == "CURRENCY_champion":
+            champ_shards.append(loot["itemDesc"])
+            print(champ_shards)
 
-    # for each loot in the account
-    for loot in jsonObject:
-        totalBlueEssences += loot["disenchantValue"]
-        lootShardsLen += 1
-        deletedChamp.append(loot["itemDesc"])
-
-    return totalBlueEssences, lootShardsLen, deletedChamp
+    return total_blue_essences, champ_shards
 
 
-def genFinalListToSell(jsonObject):
-    """
-    :param jsonObject: contain all loot as json obj, dict composed of dict of loot
-    :return: dict of owned champ available to disenchant and the nb of stack
+def disenchant(http_session, loot_to_disenchant, host, port, protocol, debug=False):
+    resource_disenchant = "/lol-loot/v1/recipes/CHAMPION_RENTAL_disenchant/craft?repeat="
+    no_error = False
 
-    Create a dict of champ chard to sell by returning a uniq ID and the nb of stack of this champ
-    """
-
-    champDict = {}
-
-    # for each loot in the account
-    for loot in jsonObject:
-        # Add to dict => champDict[<uniqId>] = <nbOfStackedShards>
-        champDict[loot["lootName"]] = loot["count"]
-
-    return champDict
-
-
-def disenchant(httpClient, champDict, host, port, protocol):
-    """
-    :param httpClient:
-    :param champDict:
-    :param host:
-    :param port:
-    :param protocol:
-    :return:
-    """
-
-    noError = 0
-    print("[+] Disenchanting ...")
-    for lootName, count in champDict.items():
-        resource_disenchant = (
-            "/lol-loot/v1/recipes/CHAMPION_RENTAL_disenchant/craft?repeat="
-        )
+    for loot_name, count in loot_to_disenchant.items():
         url = f"{protocol}://{host}:{port}{resource_disenchant}{count}"
-        body = f'["{lootName}"]'
-        r = httpClient.post(url, data=body)
+        body = json.dumps([loot_name])
+        response = http_session.post(url, data=body)
 
-        if r.status_code == 500:
-            noError = 1
+        if response.status_code == 500:
+            no_error = True
 
-    if noError:
-        print(f"[!] Error while deleting some shards, some might be still here ...")
+        # if debug:
+        #     print(f"POST Request URL: {url}")
+        #     print(f"POST Request Body: {body}")
+        #     print(f"POST Response: {response.text}")
 
-    print("[+] Done !")
-
-
-def onlyOwned(jsonList):
-    new_listOfDict = []
-
-    # For each loot in jsonObj
-    for loot in jsonList:
-
-        # if owned then keep in list to disenchant, else filtered out
-        if loot["itemStatus"] == "OWNED":
-            new_listOfDict.append(loot)
-
-    return new_listOfDict
+    if no_error:
+        print("[!] Error while deleting some shards, some might still be here ...")
+    else:
+        print("[+] Done!")
 
 
-def onlyChamp(jsonList):
-    new_listOfDict = []
-
-    # For each loot in jsonObj
-    for loot in jsonList:
-
-        # If it is a champ shard
-        if loot["disenchantLootName"] == "CURRENCY_champion":
-            new_listOfDict.append(loot)
-
-    return new_listOfDict
-
-
-def champExclude(jsonList, excludeList):
-    new_listOfDict = []
-    excludeList = [x.lower() for x in excludeList]
-
-    # For each loot in jsonObj
-    for loot in jsonList:
-
-        # if the itemDesc value is not in excludeList then append to new list
-        if loot["itemDesc"].lower() not in excludeList:
-
-            # then Add to new list
-            new_listOfDict.append(loot)
-
-        else:
-            # print(f'XX Exluding {loot["itemDesc"]}')
-            pass
-
-    return new_listOfDict
-
-
-def clearExcludeList(jsonList, champList):
-    new_champList = []
-
-    # For each loot in jsonObj
-    for loot in jsonList:
-
-        # if champ name is in list then add to cleaned list (else bye bye)
-        if loot["itemDesc"].lower() in champList:
-            new_champList.append(loot["itemDesc"])
-
-    return sorted(new_champList)
-
-
-def run(riotBaseFolder, excludeList=None):
+def run(lolPaths, exclude_list=None, debug=False):
     host = "127.0.0.1"
+    port = None
+    password = None
+    protocol = None
 
-    # Get context info
-    port, password, protocol = get_lockfile(riotBaseFolder)
+    for lolPath in lolPaths:
+        lolPath = Path(lolPath)
+        if not lolPath.is_dir():
+            if debug:
+                print(f"Path do not exist: {lolPath}")
+            continue  # Try the next path
+        else:
+            if debug:
+                print(f"Valid lol path: {lolPath}")
 
-    # Setup auth
-    httpClient = initHttpSession(password)
+        try:
+            port, password, protocol = get_lockfile([lolPath], debug)
+            break  # Stop at the first successful lockfile found
+        except FileNotFoundError:
+            continue  # Try the next path
 
-    # Get raw list jsonObj from the API
-    jsonList = getLoot(httpClient, host, port, protocol)
-    print(f"[*] {len(jsonList)} loot found")
+    if not port or not password or not protocol:
+        raise FileNotFoundError("Lockfile does not exist in any of the specified paths.")
 
-    # Only keep champ shard from the json obj
-    jsonList = onlyChamp(jsonList)
+    http_session = init_http_session(password)
+    loot_list = get_loot(http_session, host, port, protocol, debug)
+    if debug:
+        print(json.dumps(loot_list, indent=4))
 
-    # Only keep owned champ shard
-    jsonList = onlyOwned(jsonList)
+    # Filter loot based on your criteria here
 
-    # Exclude user specified champ from jsonObj if needed
-    if excludeList:
-        # clean the exclude list of user's error
-        excludeList = clearExcludeList(jsonList, excludeList)
-
-        # generate new json loot obj
-        jsonList = champExclude(jsonList, excludeList)
-
-        print(
-            f'[-] Shard that wont be deleted (and that you get a shard of): {", ".join([x for x in excludeList])}'
-        )
-
-    # print(f'{", ".join([loot["itemDesc"] for loot in jsonList])}')
-
-    # Get stat from the json Obj after filter
-    totalBlueEssences, lootShardsLen, deletedChamp = getStats(jsonList)
-    if totalBlueEssences == 0:
+    total_blue_essences, champ_shards = get_stats(loot_list)
+    if total_blue_essences == 0:
         print("[-] No champ shard to delete bro, I'm leaving")
-        sys.exit(0)
+        return
 
-    print(f"[*] {len(jsonList)} are owned")
-    print(f"[*] {lootShardsLen} are champions shards")
-    print(f"[*] You would won {totalBlueEssences} blue essences duh")
-    print(f"[*] Deleted shards would be: {', '.join(deletedChamp)}")
+    print(f"[*] {len(loot_list)} loots are owned")
+    print(f"[*] {len(champ_shards)} loots are champions shards")
+    print(f"[*] You would win {total_blue_essences} blue essences")
+    print(f"[*] Deleted champ shards would be: {', '.join(champ_shards)}")
 
-    # Generate the final list to disenchant
-    champDict = genFinalListToSell(jsonList)
+    champ_to_disenchant = generate_final_list_to_sell(loot_list)
+    validation = input("[?] Do you confirm the disenchantment of these champ shards? (yes/no): ").strip().lower()
 
-    # User validation
-    validation = query_yes_no(
-        "[?] Do you confirm the disenchantment of these champ shards ?",
-        default="no",
-    )
-
-    if not validation:
-        print("[X] You choose not to disenchant, bye")
-        sys.exit(0)
-
-    # Disenchant shards
-    disenchant(httpClient, champDict, host, port, protocol)
+    if validation == "yes":
+        disenchant(http_session, champ_to_disenchant, host, port, protocol, debug)
+    else:
+        print("[X] You chose not to disenchant, bye")
 
 
-if __name__ == "__main__":
-    # Handling args
-    parser = argparse.ArgumentParser(description="Scripts parameters")
+def main():
+    parser = argparse.ArgumentParser(description="Disenchant League of Legends champion shards")
     parser.add_argument(
         "-p",
         "--path",
         action="store",
-        default=".\\",
+        default=["C:\\Program Files\\League of Legends", "C:\\Jeux\\League of Legends"],
         type=Path,
-        help='Path of "League of Legend" Folder without "\\" at the end, default is current folder.\n Ex: '
-        "disenchantChampShards.py --path C:\Riot Games\League of Legends",
+        nargs='+',
+        help="List of possible paths to League of Legends Folder without '\\' at the end",
     )
     parser.add_argument(
         "-e",
@@ -312,34 +151,19 @@ if __name__ == "__main__":
         action="store",
         default="",
         type=str,
-        help="Coma separated list of Champ to exclude(case insensitive), like: --exclude vayne, jinx, trundle,sion,MoRgAnA",
+        help="Comma-separated list of champions to exclude (case insensitive)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode to print debug messages",
     )
 
     args = parser.parse_args()
 
-    lolPath = Path(args.path)
-    if lolPath == Path("."):
-        print("[*] No path specified, defaulting to current folder")
-    else:
-        print(f"[*] League of Legend folder path: {lolPath} ")
+    lolPaths = args.path
+    run(lolPaths, args.exclude.split(",") if args.exclude else [], args.debug)
 
-    # handling exclude list if it is not empty
-    if args.exclude:
 
-        # deleting space, duplicate, and line return, spliting arg from coma
-        excludeList = [champ.strip().lower() for champ in args.exclude.split(",")]
-        # print(excludeList)
-
-    else:
-        excludeList = []
-
-    # Check if valid directory
-    if not lolPath.is_dir():
-        print(
-            f"[!] Path is not valid, check the League of Legend folder path, also note that valid path does not "
-            f"contain '\\' at the end "
-        )
-        sys.exit(1)
-
-    # run core
-    run(lolPath, excludeList)
+if __name__ == "__main__":
+    main()
