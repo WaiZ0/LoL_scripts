@@ -146,7 +146,8 @@ def run(lolpaths, exclude_list=None, debug=False):
     print(f"[*] Deleted champ shards would be: {', '.join(champ_shards)}")
 
     champ_to_disenchant = get_champ_lootid(loots)
-    print(champ_to_disenchant)
+    if debug:
+        print(champ_to_disenchant)
     validation = input("[?] Do you confirm the disenchantment of these champ shards? (yes/no): ").strip().lower()
 
     if validation == "yes":
